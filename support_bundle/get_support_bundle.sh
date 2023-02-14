@@ -7,6 +7,7 @@ catch() {
 }
 
 #generate sysdigcloud support bundle on kubernetes
+#test comment for iac scan
 
 LABELS=""
 CONTEXT=""
