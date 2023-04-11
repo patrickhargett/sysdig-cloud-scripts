@@ -1,0 +1,317 @@
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: sysdigcloud-api
+  namespace: sysdigcloud
+spec:
+  selector:
+    matchLabels:
+      app: sysdigcloud
+      role: api
+  maxUnavailable: 25%
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    affinity: api
+    app: sysdigcloud
+    role: api
+  namespace: sysdigcloud
+  name: sysdigcloud-api
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 1200
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: sysdigcloud
+      role: api
+  strategy:
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        affinity: api
+        app: sysdigcloud
+        role: api
+        np-allow-ingress: 'true'
+      annotations:
+        version: "0.99.0-main.2023-02-22T17-02-16Z.0fb1782"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9001"
+        prometheus.io/path: "/actuator/prometheus"
+        config-shasum: b6f602f4235bc209bc36c138b2c9e26c69e37e5fb71e687aceaf18a7cc7235e3
+        secret-shasum: 94b50cd0c3b817376338b761f37fa8bd0518f9bafe05a8c4e8412cb258d90196
+    spec:
+      serviceAccountName: sysdig
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: affinity
+                      operator: In
+                      values:
+                        - api
+                topologyKey: kubernetes.io/hostname
+          ## Strive to spread the pods across multiple AZs
+      containers:
+        - name: api
+          resources:
+            limits:
+              cpu: "4"
+              memory: 6Gi
+            requests:
+              cpu: "1"
+              memory: 4Gi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          imagePullPolicy: IfNotPresent
+          image: quay.io/sysdig/sysdig-api:6.1.1.230302182052
+          volumeMounts:
+            - name: logs
+              mountPath: /logs
+            - mountPath: /opt/sysdig.conf.d/10_api_config
+              name: config
+            - mountPath: /opt/sysdig.conf.d/20_api_secret
+              name: secret
+            - name: onpremise-config
+              mountPath: /opt/sysdig.conf.d/30_legacy_onpremise_config
+            - mountPath: /opt/sysdig.conf.d/40_api_config
+              name: additional-config
+            - name: java-certs
+              mountPath: /opt/java-certs/
+            - name: elasticsearch-certs
+              mountPath: /opt/kubernets_secrets/elasticsearch_certs
+            - name: redis-ca-pub-certs
+              mountPath: /opt/kubernetes_secrets/redis_certs
+            - mountPath: /opt/sysdig.conf.d/api_redis_config
+              name: redis-config
+            - mountPath: /opt/sysdig.conf.d/api_redis_secret
+              name: redis-secret
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ROLES
+              value: api
+            - name: ADDITIONAL_PROFILES
+              value: onpremise
+            - name: LOG_ROLE
+              value: api
+            - name: JAVA_OPTS
+              value: "-Dserver.port=8080 -Xmx4g -Xms4g -Ddraios.meerkat.api.enabled=true   -Dsysdig.beacon.promEnabledByDefault=false"
+            - name: PROM_REMOTE_WRITE_SERVICE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: beacon.token
+                  optional: true
+            - name: WORKER_CLOUDWATCH_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: worker.cloudwatch.api.token
+            - name: SCANNING_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: scanning.service.token
+            - name: ALERTING_MANAGER_APITOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: alerting.manager.apiToken
+                  optional: true
+            - name: ALERTING_NOTIFIER_APITOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: alerting.notifier.apiToken
+                  optional: true
+            - name: SECURE_OVERVIEW_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: secure.overview.service.token
+            - name: CLOUDSEC_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: cloudsec.service.token
+            - name: CLOUDAUTH_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: cloudauth.service.token
+            - name: COMPLIANCE_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: compliance.service.token
+            - name: EVENTMONITOR_BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: eventmonitor.backend.service.token
+                  optional: true
+            - name: SECURE_ONBOARDING_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: secure.onboarding.service.token
+            - name: SECURE_TODO_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: secure.todo.service.token
+            - name: POLICIES_BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: policies.backend.service.token
+            - name: ADMISSION_CONTROLLER_API_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: admission.controller.api.service.token
+                  optional: true
+            - name: RAPID_RESPONSE_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: rapid.response.service.token
+            - name: PADVISOR_BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: padvisor.backend.service.token
+                  optional: true
+            - name: PROFILING_BACKEND_SERVICE_TOKEN_V2
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: profiling.backend.service.token.v2
+                  optional: true
+            - name: AUDIT_BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: audit.backend.service.token
+                  optional: true
+            - name: EVENTS_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: events.service.token
+                  optional: true
+            - name: EVENTS_FORWARDER_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: eventsforwarder.service.token
+                  optional: true
+            - name: API_SERVICETOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: api.service.token
+                  optional: true
+            - name: NETSEC_BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: netsec.service.token
+                  optional: true
+            - name: FALCO_CLOUD_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: falcocloud.service.token
+                  optional: true
+            - name: AZURE_API_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: azure.service.api.token
+                  name: sysdigcloud-api-data-secret
+                  optional: true
+            - name: REGION_SYNC_SINGLE_TENANT_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: regionsync.service.singletenant.writetoken
+                  name: sysdigcloud-api-data-secret
+                  optional: true
+            - name : GITHUB_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: sysdigcloud-api-data-secret
+                  key: github.pat
+          readinessProbe:
+            httpGet:
+              path: /api/config
+              port: 8080
+              scheme: HTTP
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            timeoutSeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/bash","-c","sleep 10 && curl -v http://127.0.0.1:8080/api/admin/drain"]
+      securityContext: {}
+      terminationGracePeriodSeconds: 70
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: sysdigcloud-pull-secret
+      volumes:
+        - name: logs
+          emptyDir: {}
+        - name: config
+          configMap:
+            defaultMode: 420
+            name: sysdigcloud-api-config
+        - name: secret
+          secret:
+            defaultMode: 420
+            secretName: sysdigcloud-api-secret
+        - name: redis-config
+          configMap:
+            defaultMode: 420
+            name: sysdigcloud-api-redis-config
+        - name: onpremise-config
+          configMap:
+            defaultMode: 420
+            name: sysdigcloud-api-onpremise-config
+            optional: true
+        - name: additional-config
+          configMap:
+            defaultMode: 420
+            name: sysdigcloud-api-additional-config
+            optional: true
+        - name: elasticsearch-certs
+          secret:
+            defaultMode: 420
+            secretName: sysdigcloud-api-es-certs
+        - name: java-certs
+          secret:
+            defaultMode: 420
+            secretName: sysdigcloud-api-java-certs
+        - name: redis-secret
+          secret:
+            defaultMode: 420
+            secretName: sysdigcloud-api-redis-secret
+        - name: redis-ca-pub-certs
+          secret:
+            defaultMode: 420
+            secretName: sysdigcloud-api-redis-ca-pub-certs
